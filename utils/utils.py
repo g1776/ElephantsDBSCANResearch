@@ -276,3 +276,70 @@ def plot_range(clusters, centroids, ax=None, show=True):
         plt.show()
     else: 
         return ax
+
+
+def run_algorithm(data, fuzzy=True):
+    """
+    The most comprehensive form of the DBSCAN algorithm with appended historical weather station data. This function will
+    run DBSCAN on the given data, as well as calculate temperature from weather stations. 
+    
+    Parameters
+    -----------
+    
+    data: (DataFrame) Contains at least the columns ["location-lat", "location-long", "timestamp", "tag-local-identifier"].
+    fuzzy: (bool, optional) Toggle fuzzy matching, as described in the research paper. Default True.
+    
+    
+    Returns
+    -----------
+    centroids: (DataFrame) The centroids calculated (mean of values in given cluster). This is both Temp-Influenced and Without Temp-Influence.
+    clusters: (DataFrame) The clusters calculated. This is only Without Temp-Influence, as the Temp-Influenced clusters are not too useful to visualize.
+    percents_found: (list) List of percents of timestamps matched for each unique tag-local-identifier (in the order of data["tag-local-identifier"].unique())
+    """
+
+    centroids = None
+    clusters = None
+    
+    all_centroids = []
+    all_clusters = []
+    percents_found = []
+
+    for id, group, in data.groupby("tag-local-identifier"):
+        print(id)
+
+        station_data, station, extra = get_station_temps(group, fuzzy=fuzzy)
+
+        # move in if no stations were found
+        if station_data is None:
+            print("\n")
+            continue
+
+        # calculate percent of timestamps we found temp data for
+        percent_found = station_data[station_data["stationTemp"].notna()].shape[0] / group.shape[0] * 100
+        print("Timestamps found: ", str(round(percent_found, 3)) + "%") 
+        percents_found.append(percent_found)
+
+        
+        (clusters_heat, centroids_heat), (clusters_wo, centroids_wo) = with_and_without_heat(station_data,
+#                                                                                              r_heat=0.2, mp_heat=25, 
+#                                                                                              r_wo=0.06, mp_wo=45
+                                                                                            )
+        centroids = centroids_heat.append(centroids_wo)
+        print(f"Temp-Influenced centroids: {centroids_heat.shape[0]}")
+        print(f"Without Temp-Influenced centroids: {centroids_wo.shape[0]}")
+        print("\n")
+
+        centroids["tag-local-identifier"] = id
+
+        all_centroids.append(centroids)
+        all_clusters.append(clusters_wo)
+        
+    if all_centroids != []:
+        centroids = pd.concat(all_centroids, ignore_index=True)
+    if all_clusters != []:
+        clusters = pd.concat(all_clusters, ignore_index=True)
+        
+    
+        
+    return centroids, clusters, percents_found
+                        

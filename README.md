@@ -43,7 +43,7 @@ In order to run these files, you will need the data. The data is publicly availa
 
 The code expects the data to be in a certain file structure, as illustrated below:
 
-
+```
 📦Movebank
  ┣ 📂African elephants in Etosha National Park (data from Tsalyuk et al. 2018)
  ┃ ┣ 📜African elephants in Etosha National Park (data from Tsalyuk et al. 2018) README.txt
@@ -56,7 +56,7 @@ The code expects the data to be in a certain file structure, as illustrated belo
  ┃ ┣ 📜ThermochronTracking Elephants Kruger 2007 README.txt
  ┃ ┣ 📜ThermochronTracking Elephants Kruger 2007-reference-data.csv
  ┃ ┗ 📜ThermochronTracking Elephants Kruger 2007.csv
-
+```
 
 The data is loaded in by `load_movebank_data()`, provided in `utils.utils.py`. All of the necessary files can be found from the links above.
 

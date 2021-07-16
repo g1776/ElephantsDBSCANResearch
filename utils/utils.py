@@ -1,29 +1,42 @@
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-import pandas as pd
-pd.options.mode.chained_assignment = None  # default='warn'
-import numpy as np
+import os
+from collections import Counter
+from termcolor import cprint
+import colorama
+colorama.init()
 
+import pandas as pd
+import numpy as np
 import geopandas as gpd
+
 from pyproj import CRS
 from shapely.geometry import Point
 from meteostat import Stations, Hourly
-from datetime import datetime
+from OSMPythonTools.overpass import overpassQueryBuilder, Overpass
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-import os
-from sklearn.cluster import DBSCAN
-import sklearn.utils
+from sklearn.cluster import DBSCAN, KMeans
 from sklearn.preprocessing import StandardScaler
 
 
-def load_movebank_data(study_name, epsg=3395):
+def load_movebank_data(movebank_root, study_name, epsg=3395):
+    """Loads in data from the movebank folder, with the specified folder structure.
+
+    Args:
+        movebank_root (str): fp to the movebank folder.
+        study_name (str): full name of the study folder to load from.
+        epsg (int, optional): EPSG id of the desired projection. Defaults to 3395.
+
+    Returns:
+        Tuple: The first element is the data as a GeoDataFrame, the second is the reference data as a DataFrame.
+    """
+
+
     # Default epsg:3395 (Mercator)
     
     # Define parts of filepaths
-    root_folder = r"C:\Users\grego\Anti-Poaching Research\data\Movebank"
+    root_folder = movebank_root
     study_data = study_name + ".csv"
     reference_data = study_name + "-reference-data.csv"
     
@@ -278,7 +291,7 @@ def plot_range(clusters, centroids, ax=None, show=True):
         return ax
 
 
-def run_algorithm(data, fuzzy=True):
+def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
     """
     The most comprehensive form of the DBSCAN algorithm with appended historical weather station data. This function will
     run DBSCAN on the given data, as well as calculate temperature from weather stations. 
@@ -319,10 +332,12 @@ def run_algorithm(data, fuzzy=True):
         print("Timestamps found: ", str(round(percent_found, 3)) + "%") 
         percents_found.append(percent_found)
 
-        
+        # etosha values
+        # r_heat=0.2, mp_heat=25, 
+        # r_wo=0.06, mp_wo=45
         (clusters_heat, centroids_heat), (clusters_wo, centroids_wo) = with_and_without_heat(station_data,
-#                                                                                              r_heat=0.2, mp_heat=25, 
-#                                                                                              r_wo=0.06, mp_wo=45
+                                                                                                r_heat=r_heat, mp_heat=mp_heat, 
+                                                                                                r_wo=r_wo, mp_wo=mp_wo
                                                                                             )
         centroids = centroids_heat.append(centroids_wo)
         print(f"Temp-Influenced centroids: {centroids_heat.shape[0]}")
@@ -342,4 +357,74 @@ def run_algorithm(data, fuzzy=True):
     
         
     return centroids, clusters, percents_found
-                        
+
+
+
+def get_nearby_settlements(centroids, radius=1):
+
+
+    print("getting human settlements")
+
+    center_lat = centroids["location-lat"].median()
+    center_long= centroids["location-long"].median()
+
+    overpass = Overpass()
+
+    ## bbox to get places in 
+    bbox=[center_lat-radius, center_long-radius, center_lat+radius,center_long+radius]
+
+    query = overpassQueryBuilder(
+        bbox=bbox,
+        elementType='node', 
+        selector='place~"city|town|village|hamlet"',
+        out='body'
+    )
+
+    res = overpass.query(query, timeout=50)
+
+    places = pd.DataFrame(res.toJSON()['elements'])
+    places = places.drop('tags', axis=1).join(pd.DataFrame(places.tags.values.tolist()))
+    places["geometry"] = places.apply(lambda row: Point([row["lon"], row["lat"]]), axis=1)
+    places = gpd.GeoDataFrame(places, geometry="geometry")
+
+    return places
+
+
+def get_top_n_places(centroids, places, n=10):
+
+    cprint(f"Number of places: {places.shape[0]}", "cyan")
+
+    if places.shape[0] > centroids.shape[0]:
+        num_clusters = int(round(centroids.shape[0] * .75, 0))
+        cprint(f"WARNING: Sampling down to {num_clusters} places, as there are more places than elephant centroids", "red")
+        places = places.sample(n=num_clusters, random_state=42, replace=False)
+
+    c_points = np.array(centroids.geometry.apply(lambda p: [p.x, p.y]).tolist())
+
+    p_points = np.array(places.geometry.apply(lambda p: [p.x, p.y]).tolist())
+    
+
+    # use KMeans to identify how many centroids are near each settlement
+    kmeans = KMeans(n_clusters=places.shape[0], init=p_points, max_iter=1)
+    kmeans.fit(c_points)
+
+    # Find Top 10 settlements based on cluster size
+    counted = Counter(kmeans.labels_)
+    n_counted = counted.most_common(n)
+    idxs = [k for k, v in n_counted]
+    top_n_places = places.iloc[idxs]
+    top_n_places["n_centroids_in_settlement_cluster"] = [v for k, v in n_counted]
+
+    
+    # subset columns
+    cols = ["geometry", "name", "place", "old_name", "alt_name", "n_centroids_in_settlement_cluster"]
+    if "description" in top_n_places.columns:
+            cols.insert(0, "description")
+    try:
+        top_n_places = top_n_places[cols]
+    except:
+        print("INVALID columns. Valid columns are:", top_n_places.columns)
+
+    return top_n_places
+
+                            

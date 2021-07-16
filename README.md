@@ -26,7 +26,10 @@ This folder contains the major Jupyter notebooks used for the research. In order
 
 ## Utils
 
-This folder contains the final form of lots of the functions used throughout the notebooks. If you want to use any of this code in another project, I would highly recommend using the code from `utils.py` found inside this folder, instead of code found in the notebooks. Some quirks and edge cases were fixed along the way, and the best version of some functions exists in this file. For example, `load_movebank_data()` exists in multiple notebooks, but the version that should be used is the one in `utils.py`. 
+This folder contains the final form of lots of the functions used throughout the notebooks. If you want to use any of this code in another project, I would highly recommend using the code from `utils.py` found inside this folder, instead of code found in the notebooks. Some quirks and edge cases were fixed along the way, and the best version of the majority of the functions exists in this file. For example, `load_movebank_data()` exists in multiple notebooks, but the version that should be used is the one in `utils.py`. 
+
+The utils folder contains a `workflow.py`. This file demonstrates how the functions in `utils.py` should be used
+in order to recreate the steps outlined in the paper. The steps in `workflow.py` are also outlined in the a flowchart found at `supplement/flowchart.png`. It is important to note that step 4 in `workflow.py` (also present in the  flowchart) is not mentioned in the research paper. This step takes the centroids and nearby places and uses KMeans to classify each centroid to a place. Doing so allows us to programtically rank each place based on how many elephants are near the given location. This final step outputs the "locations of interest" as talked about in the paper.
 
 
 ## Data

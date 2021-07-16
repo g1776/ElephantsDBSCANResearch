@@ -60,11 +60,12 @@ def load_movebank_data(movebank_root, study_name, epsg=3395):
     # cast timestamp to dt
     study_gdf["timestamp"] = pd.to_datetime(study_gdf["timestamp"], format="%Y-%m-%d %H:%M:%S.%f")
     
+    cprint(f"Data shape: {study_gdf.shape}", "magenta")
     
     return study_gdf, reference_df
 
 
-def get_station_temps(elephant_data, num_stations=10, fuzzy=True):
+def get_station_temps(elephant_data, num_stations=10, fuzzy=True, verbose=True):
     """
     Get historical temperature data for all data points from a local weather station.
     
@@ -119,11 +120,13 @@ def get_station_temps(elephant_data, num_stations=10, fuzzy=True):
         if station_data.shape[0] > 0:
             closest_station = station_data
             closest_distance = station.distance
-            print(f"Using station data from Station(wmo = {station.wmo}) at distance {round(closest_distance, 3)}")
+            if verbose:
+                print(f"Using station data from Station(wmo = {station.wmo}) at distance {round(closest_distance, 3)}")
             break
     
     if closest_station is None:
-        print("No stations found")
+        if verbose:
+            print("No stations found")
         heat_joined = None
         closest_distance = -1
         closest_station = None
@@ -136,14 +139,16 @@ def get_station_temps(elephant_data, num_stations=10, fuzzy=True):
         wmo_heat.sort_index(inplace=True)
         
         if fuzzy:
-            print(f"Fuzzy tolerance: {tol}")
+            if verbose:
+                print(f"Fuzzy tolerance: {tol}")
             heat_joined = pd.merge_asof(right=wmo_heat, left=elephant_data, right_index=True, left_on="timestamp", tolerance=tol, direction="forward").reset_index(drop=True)
         else:
             heat_joined = pd.merge(left=elephant_data, right=wmo_heat, left_on="timestamp", right_index=True, how="left").reset_index(drop=True)
         
         heat_joined.rename(columns={"temp": "stationTemp"}, inplace=True)
         if heat_joined[heat_joined.stationTemp.notna()].shape[0] == 0:
-            print("No timestamps found")
+            if verbose:
+                print("No timestamps found")
             heat_joined = None
     
     # return some info about the calculations
@@ -198,13 +203,14 @@ def get_clusters(data, cols, r = 0.2, mp = 50, noise=False):
 def with_and_without_heat(data, 
                         heat_col="stationTemp",
                         noise=True,
-                        r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
+                        r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, verbose=True):
     
     clusters_heat, centroids_heat, clusters_wo, centroids_wo = None, None, None, None
     
     # some data points' temp will be NaN if it couldn't be found by in station data. Drop these rows.
     data_with_temps = data[data[heat_col].notna()]
-    print(f"Calculating temp-influenced clusters and centroids {data_with_temps.shape}")
+    if verbose:
+        print(f"Calculating temp-influenced clusters and centroids {data_with_temps.shape}")
 
     clusters_heat, centroids_heat = get_clusters(data_with_temps, 
                                         ["location-long", "location-lat", heat_col],
@@ -213,8 +219,8 @@ def with_and_without_heat(data,
                                         )
     centroids_heat["feature space"] = "Temp-influenced"
 
-
-    print(f"Calculating without-temp clusters and centroids {data.shape}")
+    if verbose:
+        print(f"Calculating without-temp clusters and centroids {data.shape}")
     # use all data, regardless of missing temp to calculate exclusively coordinate-based clustering
     clusters_wo, centroids_wo = get_clusters(data, 
                                         ["location-long", "location-lat"],
@@ -291,7 +297,7 @@ def plot_range(clusters, centroids, ax=None, show=True):
         return ax
 
 
-def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
+def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, verbose=True):
     """
     The most comprehensive form of the DBSCAN algorithm with appended historical weather station data. This function will
     run DBSCAN on the given data, as well as calculate temperature from weather stations. 
@@ -318,18 +324,20 @@ def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
     percents_found = []
 
     for id, group, in data.groupby("tag-local-identifier"):
-        print(id)
+        cprint(f"Processing id: {id}", "magenta")
 
-        station_data, station, extra = get_station_temps(group, fuzzy=fuzzy)
+        station_data, station, extra = get_station_temps(group, fuzzy=fuzzy, verbose=verbose)
 
         # move in if no stations were found
         if station_data is None:
-            print("\n")
+            if verbose:
+                print("\n")
             continue
 
         # calculate percent of timestamps we found temp data for
         percent_found = station_data[station_data["stationTemp"].notna()].shape[0] / group.shape[0] * 100
-        print("Timestamps found: ", str(round(percent_found, 3)) + "%") 
+        if verbose:
+            print("Timestamps found: ", str(round(percent_found, 3)) + "%") 
         percents_found.append(percent_found)
 
         # etosha values
@@ -337,12 +345,14 @@ def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
         # r_wo=0.06, mp_wo=45
         (clusters_heat, centroids_heat), (clusters_wo, centroids_wo) = with_and_without_heat(station_data,
                                                                                                 r_heat=r_heat, mp_heat=mp_heat, 
-                                                                                                r_wo=r_wo, mp_wo=mp_wo
+                                                                                                r_wo=r_wo, mp_wo=mp_wo,
+                                                                                                verbose=verbose
                                                                                             )
         centroids = centroids_heat.append(centroids_wo)
-        print(f"Temp-Influenced centroids: {centroids_heat.shape[0]}")
-        print(f"Without Temp-Influenced centroids: {centroids_wo.shape[0]}")
-        print("\n")
+        if verbose:
+            print(f"Temp-Influenced centroids: {centroids_heat.shape[0]}")
+            print(f"Without Temp-Influenced centroids: {centroids_wo.shape[0]}")
+            print("\n")
 
         centroids["tag-local-identifier"] = id
 
@@ -354,7 +364,8 @@ def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35):
     if all_clusters != []:
         clusters = pd.concat(all_clusters, ignore_index=True)
         
-    
+    cprint(f"Number of clusters: {clusters.shape[0]}", "magenta")
+    cprint(f"Number of centroids: {centroids.shape[0]}", "magenta")
         
     return centroids, clusters, percents_found
 
@@ -392,7 +403,7 @@ def get_nearby_settlements(centroids, radius=1):
 
 def get_top_n_places(centroids, places, n=10):
 
-    cprint(f"Number of places: {places.shape[0]}", "cyan")
+    cprint(f"Number of places: {places.shape[0]}", "magenta")
 
     if places.shape[0] > centroids.shape[0]:
         num_clusters = int(round(centroids.shape[0] * .75, 0))

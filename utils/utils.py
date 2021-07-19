@@ -13,10 +13,8 @@ from shapely.geometry import Point
 from meteostat import Stations, Hourly
 from OSMPythonTools.overpass import overpassQueryBuilder, Overpass
 
-import seaborn as sns
-import matplotlib.pyplot as plt
 
-from sklearn.cluster import DBSCAN, KMeans
+from sklearn.cluster import DBSCAN, KMeans, OPTICS, cluster_optics_xi
 from sklearn.preprocessing import StandardScaler
 
 
@@ -173,21 +171,50 @@ def perform_DBSCAN(data, radius, min_points, noise, cols):
         return data[data["cluster"] != -1]
 
     return data
+
+
+def perform_OPTICS(data, noise, cols):
+    subset = data[cols]
+
+    # run OPTICS
+    clust = OPTICS()
+    clust.fit(subset)
+    labels = clust.labels_[clust.ordering_]
+
+    # add cluster labels
+    data["cluster"] = labels
+    
+    if not noise:
+        return data[data["cluster"] != -1]
+
+    return data
     
 
-def get_clusters(data, cols, r = 0.2, mp = 50, noise=False):
-    """
-    calls perform_DBSCAN and calculates centroids
-    noise: return the datapoints that are not in any clusters (aka noise)
+def get_clusters(data, cols, method, r = 0.2, mp = 50, noise=False):
+    """Calls clustering method and calculates centroids
+
+    Args:
+        data (DataFrame): The data to cluster on.
+        cols (list): The feature space used to calculate clusters.
+        method (str): The clustering method to use (Options include ["DBSCAN", "OPTICS"]).
+        r (float, optional): Radius for DBSCAN. Defaults to 0.2.
+        mp (int, optional): MinPoints (epsilon) fro DBSCAN. Defaults to 50.
+        noise (bool, optional): Return points in the noise cluster (-1 label). Defaults to False.
+
+    Returns:
+        (clusters, centroids): Tuple containing the clusters and centroids DataFrame and GeoDataFrame, respectively.
     """
 
-    # Apply DBSCAN
-    clusters = perform_DBSCAN(data, 
-                            radius=r, 
-                            min_points=mp,
-                            noise=noise,
-                            cols=cols
-                            )
+
+    if method == "DBSCAN":
+        clusters = perform_DBSCAN(data, 
+                                radius=r, 
+                                min_points=mp,
+                                noise=noise,
+                                cols=cols
+                                )
+    elif method == "OPTICS":
+        clusters = perform_OPTICS(data, noise=noise, cols=cols)
 
     # calculate centroids
     grouped = clusters.groupby("cluster")
@@ -200,10 +227,27 @@ def get_clusters(data, cols, r = 0.2, mp = 50, noise=False):
     return clusters, centroids
 
 
-def with_and_without_heat(data, 
+def with_and_without_heat(data,
+                        method,
                         heat_col="stationTemp",
                         noise=True,
                         r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, verbose=True):
+    """Run the specified method with the Temp-Influenced and Without Temp-influence feature spaces.
+
+    Args:
+        data (GeoDataFrame): Contains the data to cluster.
+        method (str): The clustering method to use (Options include ["DBSCAN", "OPTICS"]).
+        heat_col (str, optional): Name of the heat column to use for the temperature feature. Defaults to "stationTemp".
+        noise (bool, optional): Include noise-labeled points in the return DataFrame. Defaults to True.
+        r_heat (float, optional): Radius for Temp-Influenced (DBSCAN only). Defaults to 0.2.
+        mp_heat (int, optional): MinPoints for Temp-Influenced (DBSCAN only). Defaults to 50.
+        r_wo (float, optional): Radius for Without Temp-influence (DBSCAN only). Defaults to 0.1.
+        mp_wo (int, optional): MinPoints for Without Temp-influence (DBSCAN only). Defaults to 35.
+        verbose (bool, optional): Show more info in console output. Defaults to True.
+
+    Returns:
+        list: [(clusters_heat, centroids_heat), (clusters_wo, centroids_wo)]
+    """
     
     clusters_heat, centroids_heat, clusters_wo, centroids_wo = None, None, None, None
     
@@ -214,6 +258,7 @@ def with_and_without_heat(data,
 
     clusters_heat, centroids_heat = get_clusters(data_with_temps, 
                                         ["location-long", "location-lat", heat_col],
+                                        method=method,
                                         r=r_heat, mp=mp_heat, 
                                         noise=noise
                                         )
@@ -224,6 +269,7 @@ def with_and_without_heat(data,
     # use all data, regardless of missing temp to calculate exclusively coordinate-based clustering
     clusters_wo, centroids_wo = get_clusters(data, 
                                         ["location-long", "location-lat"],
+                                        method=method,
                                         r=r_wo, mp=mp_wo, 
                                         noise=noise
                                         )
@@ -233,71 +279,7 @@ def with_and_without_heat(data,
     return [(clusters_heat, centroids_heat), (clusters_wo, centroids_wo)]
 
 
-def plot_centroids(centroids, ax, hue="cluster", s_mult=1, color_legend=True):
-    
-    centroids_heat = centroids[centroids["feature space"] == "Temp-influenced"]
-    sns.scatterplot(data = centroids_heat, 
-                        x="location-long", 
-                        y="location-lat",
-                        color="black",
-                        marker="X",
-                        style="feature space",
-                        style_order=["Without temp-influence", "Temp-influenced"],
-                        s=85 * s_mult,
-                        legend=True,
-                        ax=ax
-                    )
-    
-    # I am aware that the style attribute won't be used since I split up the data.
-    # It is solely to render the legend for the different marker shapes
-    centroids_wo = centroids[centroids["feature space"] == "Without temp-influence"]
-    sns.scatterplot(data = centroids_wo, 
-                        x="location-long", 
-                        y="location-lat",
-                        hue=hue,
-                        palette="Paired",
-                        style="feature space",
-                        style_order=["Without temp-influence", "Temp-influenced"],
-                        s=75 * s_mult,
-                        edgecolor='black',
-                        legend=color_legend,
-                        linewidth=.8,
-                        ax=ax
-                    )
-
-
-def plot_range(clusters, centroids, ax=None, show=True):
-    """
-    plots clusters and centroids for ONE elephant
-    """
-    
-    # plot clusters
-    if ax == None:
-        fig, ax = plt.subplots(1, figsize=(10,10))
-    
-    sns.set_style("white")
-    sns.despine()
-    sns.scatterplot(data = clusters, 
-                    x="location-long", 
-                    y="location-lat",
-                    hue="cluster",
-                    palette="Paired",
-                    s=4,
-                    ax=ax
-                )
-    
-    plot_centroids(centroids, ax, color_legend=False)
-    
-
-    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, title="Legend")
-    
-    if show:
-        plt.show()
-    else: 
-        return ax
-
-
-def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, verbose=True):
+def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, verbose=True, clustering_method="DBSCAN"):
     """
     The most comprehensive form of the DBSCAN algorithm with appended historical weather station data. This function will
     run DBSCAN on the given data, as well as calculate temperature from weather stations. 
@@ -344,9 +326,10 @@ def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, 
         # r_heat=0.2, mp_heat=25, 
         # r_wo=0.06, mp_wo=45
         (clusters_heat, centroids_heat), (clusters_wo, centroids_wo) = with_and_without_heat(station_data,
-                                                                                                r_heat=r_heat, mp_heat=mp_heat, 
-                                                                                                r_wo=r_wo, mp_wo=mp_wo,
-                                                                                                verbose=verbose
+                                                                                            method=clustering_method,
+                                                                                            r_heat=r_heat, mp_heat=mp_heat, 
+                                                                                            r_wo=r_wo, mp_wo=mp_wo,
+                                                                                            verbose=verbose
                                                                                             )
         centroids = centroids_heat.append(centroids_wo)
         if verbose:

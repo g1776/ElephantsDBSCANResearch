@@ -1,4 +1,7 @@
 from utils import load_movebank_data, run_algorithm, get_nearby_settlements, get_top_n_places
+from plotting import plot_range
+import os
+import pickle
 from termcolor import cprint
 import colorama
 colorama.init()
@@ -17,30 +20,41 @@ data, reference = load_movebank_data(
 ##### 2.  get temps with fuzzy matching and cluster with DBSCAN
 cprint("\n2.  get temps with fuzzy matching and cluster with DBSCAN", "cyan")
 
+data = data[data["tag-local-identifier"] == data["tag-local-identifier"].unique()[1]]
+
 centroids, clusters, percents_found = run_algorithm(data, r_heat=0.2, mp_heat=25, 
                                                             r_wo=0.06, mp_wo=45,
-                                                            verbose=False)
+                                                            clustering_method="OPTICS",
+                                                            verbose=True)
+
+plot_range(clusters, centroids)
 
 
-##### optionally save centroids to file
-# centroids.to_csv('etosha_centroids.csv')
+# # ##### optionally save centroids to file
+# filename = 'kruger_centroids.pkl'
+# fp = os.path.join('../data/', filename)
+# with open(fp, 'wb') as output:
+#     pickle.dump(centroids, output)
 
-##### optionally read in pre-calculated centroids
-# centroids = pd.read_csv('etosha_centroids.csv')
-
-
-##### 3. Query nearby settlements with Overpass
-cprint("\n3. Query nearby settlements with Overpass", "cyan")
-places = get_nearby_settlements(centroids, radius=2)
-
-
-##### 4. Use KMeans to get N places
-cprint("\n4. Use KMeans to get N places", "cyan")
-top_10 = get_top_n_places(centroids, places, n=10)
-print(top_10)
+# ##### optionally read in pre-calculated centroids
+# filename = 'kruger_centroids.pkl'
+# fp = os.path.join('../data/', filename)
+# with open(fp, 'rb') as infile:
+#     centroids = pickle.load(infile)
 
 
-cprint("*** Ta-da! ***", "green")
+# ##### 3. Query nearby settlements with Overpass
+# cprint("\n3. Query nearby settlements with Overpass", "cyan")
+# places = get_nearby_settlements(centroids, radius=2)
+
+
+# ##### 4. Use KMeans to get N places
+# cprint("\n4. Use KMeans to get N places", "cyan")
+# top_10 = get_top_n_places(centroids, places, n=10)
+# print(top_10)
+
+
+# cprint("*** Ta-da! ***", "green")
 
 
 

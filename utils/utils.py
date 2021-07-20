@@ -14,7 +14,7 @@ from meteostat import Stations, Hourly
 from OSMPythonTools.overpass import overpassQueryBuilder, Overpass
 
 
-from sklearn.cluster import DBSCAN, KMeans, OPTICS, cluster_optics_xi
+from sklearn.cluster import DBSCAN, KMeans, OPTICS, cluster_optics_dbscan
 from sklearn.preprocessing import StandardScaler
 
 
@@ -173,13 +173,16 @@ def perform_DBSCAN(data, radius, min_points, noise, cols):
     return data
 
 
-def perform_OPTICS(data, noise, cols):
+def perform_OPTICS(data, noise, cols, r=0.5):
     subset = data[cols]
 
     # run OPTICS
     clust = OPTICS()
     clust.fit(subset)
-    labels = clust.labels_[clust.ordering_]
+    labels = cluster_optics_dbscan(reachability=clust.reachability_,
+                                core_distances=clust.core_distances_,
+                                ordering=clust.ordering_, eps=r)
+    # labels = clust.labels_[clust.ordering_]
 
     # add cluster labels
     data["cluster"] = labels
@@ -190,7 +193,7 @@ def perform_OPTICS(data, noise, cols):
     return data
     
 
-def get_clusters(data, cols, method, r = 0.2, mp = 50, noise=False):
+def get_clusters(data, cols, method, r, mp, noise=False):
     """Calls clustering method and calculates centroids
 
     Args:
@@ -198,7 +201,7 @@ def get_clusters(data, cols, method, r = 0.2, mp = 50, noise=False):
         cols (list): The feature space used to calculate clusters.
         method (str): The clustering method to use (Options include ["DBSCAN", "OPTICS"]).
         r (float, optional): Radius for DBSCAN. Defaults to 0.2.
-        mp (int, optional): MinPoints (epsilon) fro DBSCAN. Defaults to 50.
+        mp (int, optional): MinPoints (epsilon) for DBSCAN. Defaults to 50.
         noise (bool, optional): Return points in the noise cluster (-1 label). Defaults to False.
 
     Returns:
@@ -214,7 +217,7 @@ def get_clusters(data, cols, method, r = 0.2, mp = 50, noise=False):
                                 cols=cols
                                 )
     elif method == "OPTICS":
-        clusters = perform_OPTICS(data, noise=noise, cols=cols)
+        clusters = perform_OPTICS(data, noise=noise, cols=cols, r=r)
 
     # calculate centroids
     grouped = clusters.groupby("cluster")
@@ -289,6 +292,8 @@ def run_algorithm(data, fuzzy=True, r_heat=0.2, mp_heat=50, r_wo=0.1, mp_wo=35, 
     
     data: (DataFrame) Contains at least the columns ["location-lat", "location-long", "timestamp", "tag-local-identifier"].
     fuzzy: (bool, optional) Toggle fuzzy matching, as described in the research paper. Default True.
+    verbose: (bool, optional) Print more stuff. Default True.
+    clustering_method: (str, optional) The clustering method to use (Options include ["DBSCAN", "OPTICS"])
     
     
     Returns

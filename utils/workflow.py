@@ -1,3 +1,5 @@
+# This file demostrates the basic usage of the files in utils.
+
 from utils import load_movebank_data, run_algorithm, get_nearby_settlements, get_top_n_places
 from plotting import plot_range
 import os
@@ -20,14 +22,12 @@ data, reference = load_movebank_data(
 ##### 2.  get temps with fuzzy matching and cluster with DBSCAN
 cprint("\n2.  get temps with fuzzy matching and cluster with DBSCAN", "cyan")
 
-data = data[data["tag-local-identifier"] == data["tag-local-identifier"].unique()[1]]
-
-centroids, clusters, percents_found = run_algorithm(data, r_heat=0.2, mp_heat=25, 
-                                                            r_wo=0.06, mp_wo=45,
-                                                            clustering_method="OPTICS",
-                                                            verbose=True)
-
-plot_range(clusters, centroids)
+centroids, clusters, percents_found = run_algorithm(data,
+                                                    clustering_method="DBSCAN",
+                                                    verbose=True,
+                                                    r_wo=0.06, r_heat=0.2,
+                                                    mp_wo=45, mp_heat=25,
+                                                    )
 
 
 # # ##### optionally save centroids to file
@@ -43,18 +43,18 @@ plot_range(clusters, centroids)
 #     centroids = pickle.load(infile)
 
 
-# ##### 3. Query nearby settlements with Overpass
-# cprint("\n3. Query nearby settlements with Overpass", "cyan")
-# places = get_nearby_settlements(centroids, radius=2)
+##### 3. Query nearby settlements with Overpass
+cprint("\n3. Query nearby settlements with Overpass", "cyan")
+places = get_nearby_settlements(centroids, radius=2)
 
 
-# ##### 4. Use KMeans to get N places
-# cprint("\n4. Use KMeans to get N places", "cyan")
-# top_10 = get_top_n_places(centroids, places, n=10)
-# print(top_10)
+##### 4. Use KMeans to get N places
+cprint("\n4. Use KMeans to get N places", "cyan")
+top_10 = get_top_n_places(centroids, places, n=10)
+print(top_10)
 
 
-# cprint("*** Ta-da! ***", "green")
+cprint("*** Ta-da! ***", "green")
 
 
 

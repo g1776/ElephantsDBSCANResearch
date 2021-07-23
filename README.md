@@ -1,7 +1,7 @@
 # Elephants DBSCAN Research
 ### Gregory Glatzer
 
-This repository accompanies the research paper **Applying DBSCAN to Elephant Movement Data**
+This repository accompanies the research paper **An Analysis of Elephants’ Movement Data in Sub-Saharan Africa Using Clustering**
 
 ## Contents
 

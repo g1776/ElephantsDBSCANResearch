@@ -24,7 +24,7 @@ cprint("\n2.  get temps with fuzzy matching and cluster with DBSCAN", "cyan")
 
 centroids, clusters, percents_found = run_algorithm(data,
                                                     clustering_method="DBSCAN",
-                                                    verbose=True,
+                                                    verbose=False,
                                                     r_wo=0.06, r_heat=0.2,
                                                     mp_wo=45, mp_heat=25,
                                                     )
@@ -51,7 +51,9 @@ places = get_nearby_settlements(centroids, radius=2)
 ##### 4. Use KMeans to get N places
 cprint("\n4. Use KMeans to get N places", "cyan")
 top_10 = get_top_n_places(centroids, places, n=10)
-print(top_10)
+
+top_10 = top_10.rename(columns={"place": "type"})
+print(top_10[["geometry", "name", "type", "n_centroids_in_settlement_cluster"]])
 
 
 cprint("*** Ta-da! ***", "green")
